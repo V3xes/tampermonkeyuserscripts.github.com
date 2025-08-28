@@ -30,16 +30,12 @@
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
       line-height:1.45;
     }
-    .wrap{max-width:900px;margin:0 auto;padding:24px}
-    h1{margin:0 0 16px 0; font-size:20px; font-weight:800}
-    .hint{color:var(--muted); font-size:13px; margin-bottom:14px}
-
+    .wrap{max-width:900px;margin:0 auto;padding:20px}
     /* Letter groups */
-    .group{margin:18px 0}
+    .group{margin:10px 0 18px}
     .group h2{
-      margin:8px 0 8px; font-size:13px; letter-spacing:.1em; color:#b5c2de; opacity:.75;
+      margin:10px 2px; font-size:12px; letter-spacing:.12em; color:#b5c2de; opacity:.75;
     }
-
     /* Rounded bars */
     details.item{
       border:1px solid var(--border);
@@ -50,7 +46,6 @@
       margin:10px 0;
     }
     details[open].item{ background: linear-gradient(180deg, #0b1220, #0b1020) }
-
     summary{
       list-style:none;
       padding:14px 16px;
@@ -66,19 +61,12 @@
     .meta{min-width:0;flex:1}
     .name{font-weight:800; font-size:15px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
     .desc{color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-    .chev{
-      opacity:.6; transition: transform .2s ease;
-      font-size:14px;
-    }
+    .chev{opacity:.6; transition: transform .2s ease; font-size:14px}
     details[open] .chev{ transform: rotate(90deg); opacity:.9 }
 
-    .panel{
-      border-top:1px solid var(--border);
-      background: linear-gradient(180deg, #0a1327, #0a1222);
-      padding:0;
-    }
+    .panel{ border-top:1px solid var(--border); background: linear-gradient(180deg, #0a1327, #0a1222) }
     .code-wrap{
-      position:relative; padding:12px 12px 12px;
+      position:relative; padding:12px;
       background:var(--code);
       border-top:1px solid #14213d; border-bottom-left-radius:var(--radius); border-bottom-right-radius:var(--radius);
       overflow:auto;
@@ -95,29 +83,20 @@
 
     .loading, .error, .empty{
       border:1px dashed var(--border); border-radius:var(--radius);
-      color:var(--muted); padding:18px; text-align:center; margin-top:10px;
+      color:var(--muted); padding:18px; text-align:center; margin:10px 2px 0;
       background:#0c1528;
     }
-    footer{ margin-top:18px; color:#8693ad; font-size:12px; opacity:.8 }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Userscripts</h1>
-    <div class="hint">Click a bar to view code. Copy button is in the top-right of the code block.</div>
-
-    <div id="status" class="loading">Loading scripts…</div>
+    <div id="status" class="loading">Loading…</div>
     <div id="container" style="display:none"></div>
-
-    <footer>
-      Organized A–Z by first letter of @name. Edit files in scripts/ and templates/.
-    </footer>
   </div>
 
   <script>
-    // Where to load the list of files
-    const MANIFEST_URL = "scripts/manifest.json";
-
+    // Read template files from this manifest
+    const MANIFEST_URL = "templates/manifest.json";
     const $ = sel => document.querySelector(sel);
     const container = $("#container");
     const status = $("#status");
@@ -128,6 +107,26 @@
       return await res.text();
     }
 
+    function slugify(s){
+      return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g,"") || "script";
+    }
+
+    function groupByLetter(items){
+      const groups = {};
+      for(const it of items){
+        const ch = (it.name?.[0] || "#").toUpperCase();
+        const letter = /[A-Z]/.test(ch) ? ch : "#";
+        (groups[letter] ||= []).push(it);
+      }
+      const order = Object.keys(groups).sort((a,b)=>{
+        if(a==="#" && b!=="#") return 1;
+        if(b==="#" && a!=="#") return -1;
+        return a.localeCompare(b);
+      });
+      return { groups, order };
+    }
+
+    // Optional: parse // ==UserScript== block if present (fallback)
     function parseUserscriptMeta(code){
       const meta = {};
       const block = code.match(/\/\/\s*==UserScript==[\s\S]*?\/\/\s*==\/UserScript==/i);
@@ -140,54 +139,72 @@
       return meta;
     }
 
-    function slugify(s){
-      return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g,"") || "script";
+    function applyPlaceholders(text, ctx){
+      return text.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (m, k)=>{
+        return (k in ctx) ? String(ctx[k]) : m;
+      });
     }
 
-    function groupByLetter(items){
-      const groups = {};
-      for(const it of items){
-        const ch = (it.name?.[0] || "#").toUpperCase();
-        const letter = /[A-Z]/.test(ch) ? ch : "#";
-        groups[letter] = groups[letter] || [];
-        groups[letter].push(it);
-      }
-      const order = Object.keys(groups).sort((a,b)=>{
-        if(a==="#" && b!=="#") return 1;
-        if(b==="#" && a!=="#") return -1;
-        return a.localeCompare(b);
+    function makeItem(s){
+      const det = document.createElement("details");
+      det.className = "item";
+      det.id = "s-" + s.slug;
+
+      const summary = document.createElement("summary");
+      const bullet = document.createElement("div"); bullet.className = "bullet";
+      const meta = document.createElement("div"); meta.className = "meta";
+      const name = document.createElement("div"); name.className = "name"; name.textContent = s.name || s.filename;
+      const desc = document.createElement("div"); desc.className = "desc"; desc.textContent = s.description || "";
+      meta.appendChild(name); meta.appendChild(desc);
+      const chev = document.createElement("div"); chev.className = "chev"; chev.textContent = "›";
+      summary.appendChild(bullet); summary.appendChild(meta); summary.appendChild(chev);
+
+      const panel = document.createElement("div"); panel.className = "panel";
+      const codeWrap = document.createElement("div"); codeWrap.className = "code-wrap";
+      const copyBtn = document.createElement("button"); copyBtn.type="button"; copyBtn.className="copy-btn"; copyBtn.textContent="Copy";
+      copyBtn.addEventListener("click", async (e)=>{
+        e.stopPropagation();
+        try{
+          await navigator.clipboard.writeText(s.code);
+          copyBtn.textContent = "Copied!";
+          copyBtn.classList.add("copied");
+          setTimeout(()=>{ copyBtn.textContent="Copy"; copyBtn.classList.remove("copied"); }, 1200);
+        }catch{
+          copyBtn.textContent = "Failed";
+          setTimeout(()=>{ copyBtn.textContent="Copy"; }, 1200);
+        }
       });
-      return { groups, order };
+      const pre = document.createElement("pre");
+      const code = document.createElement("code"); code.textContent = s.code;
+      pre.appendChild(code);
+      codeWrap.appendChild(copyBtn); codeWrap.appendChild(pre);
+      panel.appendChild(codeWrap);
+
+      det.appendChild(summary); det.appendChild(panel);
+      return det;
     }
 
     function render(items){
       if(items.length === 0){
         status.className = "empty";
-        status.textContent = "No scripts in manifest.json yet.";
+        status.textContent = "No templates listed yet (templates/manifest.json).";
         status.style.display = "";
         container.style.display = "none";
         return;
       }
       status.style.display = "none";
       container.style.display = "";
-
       const { groups, order } = groupByLetter(items);
       container.innerHTML = "";
       for(const letter of order){
         const sec = document.createElement("section");
         sec.className = "group";
-        const h2 = document.createElement("h2");
-        h2.textContent = letter;
+        const h2 = document.createElement("h2"); h2.textContent = letter;
         sec.appendChild(h2);
-
-        const arr = groups[letter].sort((a,b)=> a.name.localeCompare(b.name));
-        for(const s of arr){
-          sec.appendChild(makeItem(s));
-        }
+        groups[letter].sort((a,b)=> a.name.localeCompare(b.name)).forEach(s => sec.appendChild(makeItem(s)));
         container.appendChild(sec);
       }
-
-      // Auto-open if hash matches a slug
+      // Open hash anchor if provided
       if(location.hash){
         const el = document.getElementById(location.hash.slice(1));
         if(el && el.tagName.toLowerCase()==="details"){
@@ -197,92 +214,55 @@
       }
     }
 
-    function makeItem(s){
-      const det = document.createElement("details");
-      det.className = "item";
-      det.id = "s-" + s.slug;
-
-      const summary = document.createElement("summary");
-      const bullet = document.createElement("div");
-      bullet.className = "bullet";
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      const name = document.createElement("div");
-      name.className = "name"; name.textContent = s.name || s.filename;
-      const desc = document.createElement("div");
-      desc.className = "desc"; desc.textContent = s.description || "";
-      meta.appendChild(name); meta.appendChild(desc);
-      const chev = document.createElement("div");
-      chev.className = "chev"; chev.textContent = "›";
-
-      summary.appendChild(bullet);
-      summary.appendChild(meta);
-      summary.appendChild(chev);
-
-      const panel = document.createElement("div");
-      panel.className = "panel";
-
-      const codeWrap = document.createElement("div");
-      codeWrap.className = "code-wrap";
-
-      const copyBtn = document.createElement("button");
-      copyBtn.className = "copy-btn";
-      copyBtn.type = "button";
-      copyBtn.textContent = "Copy";
-      copyBtn.addEventListener("click", async (e)=>{
-        e.stopPropagation();
-        try{
-          await navigator.clipboard.writeText(s.code);
-          copyBtn.textContent = "Copied!";
-          copyBtn.classList.add("copied");
-          setTimeout(()=>{ copyBtn.textContent = "Copy"; copyBtn.classList.remove("copied"); }, 1200);
-        }catch(err){
-          copyBtn.textContent = "Failed";
-          setTimeout(()=>{ copyBtn.textContent = "Copy"; }, 1200);
-        }
-      });
-
-      const pre = document.createElement("pre");
-      const code = document.createElement("code");
-      code.textContent = s.code;
-      pre.appendChild(code);
-
-      codeWrap.appendChild(copyBtn);
-      codeWrap.appendChild(pre);
-      panel.appendChild(codeWrap);
-
-      det.appendChild(summary);
-      det.appendChild(panel);
-      return det;
-    }
-
     async function load(){
       try{
+        // Load manifest
         const manifestRaw = await fetchText(MANIFEST_URL);
         let list;
         try{
           const data = JSON.parse(manifestRaw);
-          list = Array.isArray(data) ? data : (data.files || data.scripts || []);
+          list = Array.isArray(data) ? data : (data.files || data.templates || []);
         }catch{
-          throw new Error("Invalid JSON in scripts/manifest.json");
+          throw new Error("Invalid JSON in templates/manifest.json");
         }
-        if(!Array.isArray(list) || list.length === 0){
-          render([]);
-          return;
-        }
+        if(!Array.isArray(list) || list.length === 0){ render([]); return; }
+
+        // Load each template HTML, pull one element’s data + code
         const results = await Promise.all(list.map(async (filename)=>{
-          const url = "scripts/" + filename;
-          const code = await fetchText(url);
-          const meta = parseUserscriptMeta(code);
-          const name = meta.name || filename.replace(/\.user\.js$/i, "");
-          const description = meta.description || "";
+          const url = "templates/" + filename;
+          const html = await fetchText(url);
+          const doc = new DOMParser().parseFromString(html, "text/html");
+
+          // Find a single element that contains everything
+          let el = doc.querySelector('script.userscript, template.userscript, [data-userscript]');
+          // If not found but file is just raw JS, fallback to treating whole text as code
+          let dataset = {};
+          let codeText = "";
+          if(el){
+            // Dataset (data-*) for easy editing
+            dataset = { ...el.dataset }; // keys like name, description, version, etc.
+            codeText = el.textContent || "";
+          }else{
+            codeText = html;
+          }
+
+          // Pull name/description (prefer data-attrs, fallback to meta block)
+          const meta = parseUserscriptMeta(codeText);
+          const name = dataset.name || meta.name || filename.replace(/\.html?$/i, "").replace(/[-_]+/g, " ");
+          const description = dataset.description || meta.description || "";
           const slug = slugify(name);
+
+          // Apply {{placeholders}} using data-* (plus name/description/filename/slug)
+          const ctx = { ...dataset, name, description, filename, slug };
+          const code = applyPlaceholders(codeText, ctx);
+
           return { filename, url, code, name, description, slug };
         }));
+
         render(results);
       }catch(err){
         status.className = "error";
-        status.textContent = "Error loading scripts: " + err.message;
+        status.textContent = "Error: " + err.message;
       }
     }
 
