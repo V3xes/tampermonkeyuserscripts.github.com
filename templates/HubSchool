@@ -1,0 +1,400 @@
+// ==UserScript==
+// @name         My Universal Script Nexus (Fully Loaded)
+// @namespace    http://tampermonkey.net/
+// @version      3.0
+// @description  A fully loaded script hub containing cheats for Sporcle, Nitro Type, Blooket, and Seterra.
+// @author       Your Name
+// @match        *://*/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @run-at       document-start
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    // ====================================================================================
+    // --- SCRIPT CONFIGURATION ---
+    // All scripts are added to this array.
+    // ====================================================================================
+    const scripts = [
+        {
+            name: "Welcome",
+            id: "welcome-script",
+            initialize: function(container) {
+                container.innerHTML = `
+                    <div class="nexus-content-inner">
+                        <h2>Welcome to the Nexus!</h2>
+                        <p>Select a script from the tabs on the right. Each script will only activate on its specific website.</p>
+                        <p>Use the <b>keybind</b> (default: Ctrl+Shift+H) to instantly hide or show all Nexus UI.</p>
+                        <p>Click the <b>gear icon (⚙️)</b> below to change settings.</p>
+                    </div>
+                `;
+            }
+        },
+        {
+            name: "Sporcle",
+            id: "sporcle-solver",
+            initialize: function(container) {
+                // Only run this script on the Sporcle game page
+                if (!window.location.href.includes('sporcle.com/games/RobPro/1-100-click-me')) {
+                    container.innerHTML = `<div class="nexus-content-inner"><h2>Sporcle Shield</h2><p>This script is only active on the Sporcle '1-100 Click Me' game page.</p></div>`;
+                    return;
+                }
+
+                container.innerHTML = `<div class="nexus-content-inner"><h2>Sporcle Shield</h2><p id="sporcle-status">Initializing...</p></div>`;
+                const statusEl = container.querySelector('#sporcle-status');
+
+                function clickStartButton() {
+                    statusEl.textContent = "Looking for 'Play Quiz' button...";
+                    const interval = setInterval(() => {
+                        const playButton = document.getElementById('button-play');
+                        if (playButton && playButton.offsetParent !== null) {
+                            clearInterval(interval);
+                            statusEl.textContent = "Starting game...";
+                            playButton.click();
+                            waitForGameReady(deployShield);
+                        }
+                    }, 200);
+                }
+
+                function waitForGameReady(callback) {
+                    statusEl.textContent = "Waiting for game board to be ready...";
+                    const interval = setInterval(() => {
+                        const gameWrapper = document.getElementById('game-wrapper');
+                        if (gameWrapper && gameWrapper.querySelectorAll('div.answer').length === 100) {
+                            clearInterval(interval);
+                            statusEl.textContent = "Game is ready. Deploying the shield.";
+                            callback(gameWrapper);
+                        }
+                    }, 200);
+                }
+
+                function deployShield(gameWrapper) {
+                    const targetMap = new Map();
+                    gameWrapper.querySelectorAll('div.answer').forEach(buttonElement => {
+                        const textDiv = buttonElement.querySelector('div.text');
+                        if (textDiv) {
+                            const num = parseInt(textDiv.textContent, 10);
+                            targetMap.set(num, buttonElement);
+                        }
+                    });
+
+                    if (document.getElementById('solver-shield')) return;
+
+                    const shield = document.createElement('div');
+                    shield.id = 'solver-shield';
+                    shield.style.cssText = `
+                        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                        background-color: rgba(0,0,0,0); z-index: 100; cursor: pointer;
+                    `;
+                    gameWrapper.style.position = 'relative';
+                    gameWrapper.appendChild(shield);
+
+                    shield.addEventListener('click', () => {
+                        let highestCorrectNumber = 0;
+                        gameWrapper.querySelectorAll('.answer.right').forEach(square => {
+                            const num = parseInt(square.querySelector('div.text').textContent, 10);
+                            if (num > highestCorrectNumber) highestCorrectNumber = num;
+                        });
+                        const correctNextNumber = highestCorrectNumber + 1;
+
+                        const targetToClick = targetMap.get(correctNextNumber);
+                        if (targetToClick) {
+                            statusEl.textContent = `Click triggered. Solving for number: ${correctNextNumber}.`;
+                            targetToClick.click();
+                        }
+
+                        if (correctNextNumber >= 100) {
+                            statusEl.textContent = "Game complete! Shield deactivated.";
+                            shield.remove();
+                        }
+                    });
+                    statusEl.innerHTML = "<b>ACTIVE.</b> Click anywhere on the game board to solve.";
+                }
+
+                clickStartButton();
+            }
+        },
+        {
+            name: "Nitro Type",
+            id: "nitro-type-cheat",
+            initialize: function(container) {
+                if (!window.location.href.includes('nitrotype.com/race')) {
+                    container.innerHTML = `<div class="nexus-content-inner"><h2>Nitro Type</h2><p>This script is only active on the Nitro Type race page.</p></div>`;
+                    return;
+                }
+
+                container.innerHTML = `<div class="nexus-content-inner"><h2>Nitro Type</h2><p id="nitro-status">Waiting for race to start...</p></div>`;
+                const statusEl = container.querySelector('#nitro-status');
+
+                function startCheat() {
+                    let interval = setInterval(function() {
+                        let raceComponent = Object.values(document.querySelector("div.dash-copyContainer"))[1]?.children?._owner?.stateNode;
+                        if (raceComponent) {
+                            clearInterval(interval);
+                            statusEl.textContent = "Cheat Activated! Typing...";
+
+                            const originalHandler = raceComponent.input.keyHandler;
+                            raceComponent.input.keyHandler = function(e, n) {
+                                if (n.key === "Enter") {
+                                    raceComponent.props.useNitro();
+                                    return;
+                                }
+                                if (e === "character") {
+                                    if (Math.random() < 1) { // 100% accuracy
+                                        const correctChar = raceComponent.props.lessonContent[raceComponent.typedIndex];
+                                        const fakeEvent = new KeyboardEvent('keypress', { key: correctChar });
+                                        originalHandler.call(this, "character", fakeEvent);
+                                    }
+                                }
+                            };
+                        }
+                    }, 1000);
+                }
+                startCheat();
+            }
+        },
+        {
+            name: "Seterra",
+            id: "seterra-solver",
+            initialize: function(container) {
+                if (!window.location.href.startsWith('https://www.geoguessr.com/vgp/')) {
+                    container.innerHTML = `<div class="nexus-content-inner"><h2>Seterra Solver</h2><p>This script is only active on a Seterra (GeoGuessr) map quiz.</p></div>`;
+                    return;
+                }
+                container.innerHTML = `<div class="nexus-content-inner"><h2>Seterra Solver</h2><p id="seterra-status">Waiting for map to load...</p></div>`;
+                const statusEl = container.querySelector('#seterra-status');
+
+                function waitForElement(selector, callback) {
+                    const interval = setInterval(() => {
+                        const element = document.querySelector(selector);
+                        if (element) {
+                            clearInterval(interval);
+                            callback(element);
+                        }
+                    }, 200);
+                }
+
+                waitForElement('#svgpoint', (svgMap) => {
+                    statusEl.textContent = "ACTIVE. Listening for clicks on the map.";
+                    svgMap.addEventListener('click', (event) => {
+                        // Using the "corrector" logic from your script
+                        event.stopPropagation();
+                        event.preventDefault();
+
+                        const clickedElement = event.target.closest('g[data-qa]');
+                        if (!clickedElement) return;
+
+                        const gameHeader = document.querySelector('[data-current-question-id]');
+                        if (!gameHeader) return;
+
+                        const correctStateId = gameHeader.getAttribute('data-current-question-id');
+                        if (!correctStateId) return;
+
+                        const stateElement = document.querySelector(`g[data-qa="${correctStateId}"]`);
+
+                        if (stateElement) {
+                             statusEl.textContent = `Intercepted click. Solving for: ${correctStateId}`;
+                             const clickEvent = new MouseEvent('click', { 'view': window, 'bubbles': true, 'cancelable': true });
+                             stateElement.dispatchEvent(clickEvent);
+                        }
+                    }, true); // Use capture phase to intercept the click first
+                });
+            }
+        },
+        {
+            name: "Blooket",
+            id: "blooket-launcher",
+            initialize: function(container) {
+                if (!window.location.host.includes('blooket.com')) {
+                    container.innerHTML = `<div class="nexus-content-inner"><h2>Blooket Cheats</h2><p>This script is only active on Blooket.</p></div>`;
+                    return;
+                }
+
+                container.innerHTML = `
+                    <div class="nexus-content-inner">
+                        <h2>Blooket Cheats</h2>
+                        <p>This is a launcher for a comprehensive Blooket cheat GUI by 005Konz.</p>
+                        <button id="launch-blooket" class="nexus-button">Launch Blooket GUI</button>
+                    </div>
+                `;
+
+                container.querySelector('#launch-blooket').addEventListener('click', () => {
+                    // This function launches the Blooket script.
+                    // We check if it's already running to prevent multiple instances.
+                    if (document.getElementById('blooket-cheat-main-gui')) {
+                        alert('Blooket GUI is already running.');
+                        return;
+                    }
+
+                    // --- The entire Blooket script from all 14 parts is placed inside this function ---
+                    const launchBlooketScript = () => {
+                        // PASTE THE FULL BLOOKET SCRIPT HERE.
+                        // For brevity, a placeholder is used, but in your file, this is where the massive script goes.
+                        alert("The full Blooket GUI script would execute now. This is a placeholder to keep the file size manageable in this chat.");
+                        // Example: The (() => { ... })(); from the Blooket script would start here.
+                    };
+                    launchBlooketScript();
+                });
+            }
+        },
+    ];
+
+    // The settings script is now separate for special handling.
+    const settingsScript = {
+        name: "Settings",
+        id: "nexus-settings",
+        initialize: function(container) {
+            // (Settings panel code is unchanged and works correctly)
+            let currentBind = GM_getValue('nexus_keybind', { key: 'h', ctrlKey: true, shiftKey: true, altKey: false });
+            let newBind = { ...currentBind };
+            function formatKeybind(bind) {
+                let parts = [];
+                if (bind.ctrlKey) parts.push('Ctrl');
+                if (bind.shiftKey) parts.push('Shift');
+                if (bind.altKey) parts.push('Alt');
+                parts.push(bind.key.toUpperCase());
+                return parts.join(' + ');
+            }
+            container.innerHTML = `
+                <div class="nexus-content-inner">
+                    <h2>Nexus Settings</h2>
+                    <p>Configure the master keybind to hide/show all UI.</p>
+                    <div class="setting-item">
+                        <label>Current Keybind:</label>
+                        <span id="current-keybind-display">${formatKeybind(currentBind)}</span>
+                    </div>
+                    <div class="setting-item">
+                        <label>Set New Keybind:</label>
+                        <input type="text" id="keybind-input" placeholder="Click here and press a key combination" readonly>
+                    </div>
+                    <button id="save-keybind-button" class="nexus-button">Save Keybind</button>
+                </div>
+            `;
+            const input = container.querySelector('#keybind-input');
+            const display = container.querySelector('#current-keybind-display');
+            const saveButton = container.querySelector('#save-keybind-button');
+            input.addEventListener('keydown', (e) => {
+                e.preventDefault();
+                if (e.key.trim() === '' || e.key === 'Control' || e.key === 'Shift' || e.key === 'Alt') return;
+                newBind = { key: e.key.toLowerCase(), ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, altKey: e.altKey };
+                input.value = formatKeybind(newBind);
+            });
+            saveButton.addEventListener('click', () => {
+                GM_setValue('nexus_keybind', newBind);
+                currentBind = { ...newBind };
+                display.textContent = formatKeybind(currentBind);
+                alert(`Keybind saved! You can now use ${formatKeybind(currentBind)}.\nPlease reload the page for the new keybind to take full effect.`);
+            });
+        }
+    };
+
+
+    // ====================================================================================
+    // --- NEXUS CORE LOGIC (You shouldn't need to edit below this line) ---
+    // ====================================================================================
+
+    function createNexus() {
+        const styles = `
+            .nexus-container { position: fixed; top: 50px; right: -400px; width: 450px; height: 600px; background-color: #2c2c2c; border: 1px solid #444; border-radius: 8px 0 0 8px; box-shadow: -5px 0 15px rgba(0,0,0,0.5); display: flex; flex-direction: row-reverse; z-index: 999999; font-family: Arial, sans-serif; color: #e0e0e0; transition: right 0.3s ease-in-out; }
+            .nexus-container.visible { right: 0; }
+            .nexus-tab-area { width: 50px; background-color: #252525; border-right: 1px solid #444; display: flex; flex-direction: column; padding-top: 10px; position: relative; }
+            .nexus-tab { writing-mode: vertical-rl; transform: rotate(180deg); padding: 15px 5px; cursor: pointer; background-color: #333; border: 1px solid #555; border-left: none; margin-bottom: 5px; border-radius: 5px 0 0 5px; font-size: 14px; user-select: none; }
+            .nexus-tab.active { background-color: #4CAF50; border-color: #4CAF50; color: white; }
+            .nexus-content-container { flex-grow: 1; overflow-y: auto; }
+            .nexus-content-panel { display: none; padding: 15px; }
+            .nexus-content-panel.active { display: block; }
+            .nexus-toggle-button { position: fixed; top: 10px; right: 10px; background-color: #333; color: #e0e0e0; border: 1px solid #555; border-radius: 5px; padding: 8px 12px; cursor: pointer; z-index: 999998; font-size: 16px; }
+            .nexus-settings-icon { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); cursor: pointer; font-size: 24px; padding: 5px; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; transition: background-color 0.2s; }
+            .nexus-settings-icon:hover { background-color: #444; }
+            .nexus-settings-icon.active { color: #4CAF50; }
+            .nexus-content-inner { padding: 10px; }
+            .nexus-content-inner h2 { margin-top: 0; border-bottom: 1px solid #555; padding-bottom: 5px; color: #4CAF50;}
+            .nexus-button { background-color: #4CAF50; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; }
+            .nexus-button:hover { background-color: #45a049; }
+            .nexus-master-hidden { display: none !important; }
+        `;
+        const styleSheet = document.createElement("style");
+        styleSheet.innerText = styles;
+        document.head.appendChild(styleSheet);
+
+        const nexusContainer = document.createElement('div');
+        nexusContainer.className = 'nexus-container';
+        const tabArea = document.createElement('div');
+        tabArea.className = 'nexus-tab-area';
+        const contentContainer = document.createElement('div');
+        contentContainer.className = 'nexus-content-container';
+
+        scripts.forEach((script, index) => {
+            const tab = document.createElement('div');
+            tab.className = 'nexus-tab';
+            tab.textContent = script.name;
+            tab.dataset.id = script.id;
+            tabArea.appendChild(tab);
+            const panel = document.createElement('div');
+            panel.className = 'nexus-content-panel';
+            panel.id = script.id;
+            contentContainer.appendChild(panel);
+            script.initialize(panel);
+            if (index === 0) {
+                tab.classList.add('active');
+                panel.classList.add('active');
+            }
+        });
+
+        const settingsPanel = document.createElement('div');
+        settingsPanel.className = 'nexus-content-panel';
+        settingsPanel.id = settingsScript.id;
+        contentContainer.appendChild(settingsPanel);
+        settingsScript.initialize(settingsPanel);
+
+        const settingsIcon = document.createElement('div');
+        settingsIcon.className = 'nexus-settings-icon';
+        settingsIcon.innerHTML = '⚙️';
+        tabArea.appendChild(settingsIcon);
+
+        nexusContainer.appendChild(contentContainer);
+        nexusContainer.appendChild(tabArea);
+        document.body.appendChild(nexusContainer);
+
+        function setActiveTab(targetId) {
+            tabArea.querySelectorAll('.nexus-tab').forEach(t => t.classList.remove('active'));
+            contentContainer.querySelectorAll('.nexus-content-panel').forEach(p => p.classList.remove('active'));
+            settingsIcon.classList.remove('active');
+            const tab = tabArea.querySelector(`.nexus-tab[data-id="${targetId}"]`);
+            if (tab) tab.classList.add('active');
+            else if (targetId === settingsScript.id) settingsIcon.classList.add('active');
+            document.getElementById(targetId).classList.add('active');
+        }
+
+        tabArea.addEventListener('click', (e) => {
+            const tab = e.target.closest('.nexus-tab');
+            const icon = e.target.closest('.nexus-settings-icon');
+            if (tab) setActiveTab(tab.dataset.id);
+            else if (icon) setActiveTab(settingsScript.id);
+        });
+
+        const toggleButton = document.createElement('button');
+        toggleButton.className = 'nexus-toggle-button';
+        toggleButton.textContent = '☰';
+        document.body.appendChild(toggleButton);
+
+        toggleButton.onclick = () => nexusContainer.classList.toggle('visible');
+
+        let keybind = GM_getValue('nexus_keybind', { key: 'h', ctrlKey: true, shiftKey: true, altKey: false });
+        window.addEventListener('keydown', (e) => {
+            if (e.key.toLowerCase() === keybind.key && e.ctrlKey === keybind.ctrlKey && e.shiftKey === keybind.shiftKey && e.altKey === keybind.altKey) {
+                e.preventDefault();
+                nexusContainer.classList.toggle('nexus-master-hidden');
+                toggleButton.classList.toggle('nexus-master-hidden');
+            }
+        });
+    }
+
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', createNexus);
+    } else {
+        createNexus();
+    }
+})();
